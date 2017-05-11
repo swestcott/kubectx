@@ -88,7 +88,6 @@ set_context() {
 }
 
 swap_context() {
-  set -e
   local ctx="$(read_context)"
   if [[ -z "${ctx}" ]]; then
     echo "error: No previous context found." >&2

@@ -51,21 +51,51 @@ current_namespace() {
   fi
 }
 
-set_namespace() {
-  kubectl config set-context "$(kubectl config current-context)" --namespace="${1}"
-  echo "Active namespace is \"${1}\"."
+namespace_file() {
+  local ctx="${1}"
+  echo "${KUBENS_DIR}/${ctx}"
+}
+
+read_namespace() {
+  local f="$(namespace_file "${1}")"
+  [[ -f "${f}" ]] && cat "${f}"
+}
+
+save_namespace() {
+  mkdir -p "${KUBENS_DIR}"
+  local f="$(namespace_file "${1}")"
+  local saved="$(read_namespace "${1}")"
+
+  if [[ "${saved}" != "${2}" ]]; then
+    printf %s "${2}" > "${f}"
+  fi
 }
 
 switch_namespace() {
+  local ctx="${1}"
+  kubectl config set-context "${ctx}" --namespace="${2}"
+  echo "Active namespace is \"${2}\".">&2
+}
+
+set_namespace() {
+  local ctx="$(current_context)"
+  local prev="$(current_namespace)"
+
   if grep -q ^"${1}"\$ <(get_namespaces); then
-    set_namespace "${1}" 
+    switch_namespace "${ctx}" "${1}"
+
+    if [[ "${prev}" != "${1}" ]]; then
+      save_namespace "${ctx}" "${prev}"
+    fi
   else
-    echo "Namespace \"${1}\" does not exist."
+    echo "Namespace \"${1}\" does not exist.">&2
+    exit 1
   fi
 }
 
 list_namespaces() {
   local cur="$(current_namespace)"
+
   local yellow=$(tput setaf 3)
   local darkbg=$(tput setab 0)
   local normal=$(tput sgr0)
@@ -77,6 +107,16 @@ list_namespaces() {
     echo "${c}"
   fi
   done
+}
+
+swap_namespace() {
+  local ctx="$(current_context)"
+  local ns="$(read_namespace "${ctx}")"
+  if [[ -z "${ns}" ]]; then
+    echo "error: No previous namespace found for current context." >&2
+    exit 1
+  fi
+  set_namespace "${ns}"
 }
 
 main() {
@@ -93,7 +133,7 @@ main() {
     elif [[ "${1}" =~ (.+)=(.+) ]]; then
       alias_context "${BASH_REMATCH[2]}" "${BASH_REMATCH[1]}"
     else
-      switch_namespace "${1}"
+      set_namespace "${1}"
     fi
   else
     echo "error: too many flags" >&2
